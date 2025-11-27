@@ -1,26 +1,53 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 255, 255, 255;
+  --background-end-rgb: 255, 255, 255;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
+/* Forzamos modo claro siempre para evitar conflictos de visibilidad */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --foreground-rgb: 0, 0, 0;
+    --background-start-rgb: 255, 255, 255;
+    --background-end-rgb: 255, 255, 255;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-start-rgb));
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* --- REGLAS DE ALTO CONTRASTE --- */
+
+/* 1. Inputs y Formularios */
+input, select, textarea {
+  color: #000000 !important; /* Negro puro */
+  background-color: #ffffff !important;
+  border-color: #d1d5db; /* Gris borde visible */
+}
+
+/* 2. Etiquetas de formularios (Ej: "Fecha", "Hora") */
+label {
+  color: #111827 !important; /* Gris muy oscuro (casi negro) */
+  font-weight: 600 !important; /* Un poco más grueso */
+}
+
+/* 3. Títulos de Secciones y Tarjetas (Ej: "Configura tu reserva", "Smart Fit") */
+h1, h2, h3, h4, h5, h6 {
+  color: #000000 !important; /* Negro puro */
+}
+
+/* 4. Textos dentro de tarjetas blancas */
+.bg-white {
+  color: #1f2937; /* Gris oscuro base */
+}
+
+/* 5. Placeholders más visibles */
+::placeholder {
+  color: #6b7280 !important; /* Gris medio-oscuro */
+  opacity: 1;
 }

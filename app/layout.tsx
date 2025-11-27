@@ -1,29 +1,26 @@
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
+import './globals.css'
+import { Inter } from 'next/font/google'
+import { Toaster } from 'react-hot-toast'; // <--- 1. IMPORTAR
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: "Space Gym - Reserva de Espacios Deportivos",
-  description: "Plataforma para reservar espacios deportivos y gimnasios",
-};
+  title: 'Space Gym',
+  description: 'Tu espacio deportivo a un clic',
+}
 
-export default function RootLayout({ children }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   return (
     <html lang="es">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={inter.className}>
+        {/* 2. AGREGAR EL COMPONENTE TOASTER AQUÍ */}
+        <Toaster position="top-center" toastOptions={{ duration: 3000 }} />
         {children}
       </body>
     </html>
-  );
+  )
 }

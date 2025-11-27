@@ -7,7 +7,8 @@ import { gymsService } from '@/lib/supabase/gyms-service';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import SettingsFab from '@/components/ui/SettingsFab';
-import Modal from '@/components/ui/Modal'; // Asegúrate de tener este componente
+import Modal from '@/components/ui/Modal';
+import toast from 'react-hot-toast'; // <--- 1. IMPORTAR TOAST
 
 export default function BusinessPage() {
   const { user, loading: authLoading } = useAuth();
@@ -22,7 +23,6 @@ export default function BusinessPage() {
   // --- ESTADOS PARA EDICIÓN ---
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingGym, setEditingGym] = useState<any>(null);
-  // Estado local del formulario de edición
   const [editForm, setEditForm] = useState({
     name: '',
     description: '',
@@ -31,14 +31,16 @@ export default function BusinessPage() {
     amenitiesString: ''
   });
   const [savingEdit, setSavingEdit] = useState(false);
-  // ----------------------------
 
   // 1. Protección de Ruta
   useEffect(() => {
     const checkRole = async () => {
       if (!user) return;
       const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-      if (data?.role === 'deportista') router.push('/dashboard');
+      if (data?.role === 'deportista') {
+        toast.error("Acceso denegado");
+        router.push('/dashboard');
+      }
     };
     if (!authLoading && user) checkRole();
   }, [user, authLoading, router]);
@@ -48,11 +50,9 @@ export default function BusinessPage() {
     const loadData = async () => {
       if (!user) return;
       
-      // Cargar Mis Gimnasios
       const { data: gyms } = await supabase.from('sport_spaces').select('*').eq('owner_id', user.id);
       setMyGyms(gyms || []);
 
-      // Cargar Reservas
       if (gyms && gyms.length > 0) {
         const gymIds = gyms.map(g => g.id);
         const { data: books } = await supabase.from('bookings')
@@ -74,23 +74,21 @@ export default function BusinessPage() {
       name: gym.name,
       description: gym.description || '',
       location: gym.location,
-      pricePerDay: gym.price_per_day, // Ojo con snake_case de la BD
+      pricePerDay: gym.price_per_day,
       amenitiesString: (gym.amenities || []).join(', ')
     });
     setEditModalOpen(true);
   };
 
-  // B) Guardar Cambios (Update)
+  // B) Guardar Cambios (Update) - CON TOAST
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingGym) return;
     setSavingEdit(true);
 
     try {
-      // Convertir string de amenities a array
       const amenities = editForm.amenitiesString.split(',').map(i => i.trim()).filter(i => i);
       
-      // Llamar al servicio actualizado
       await gymsService.updateGym(editingGym.id, {
         name: editForm.name,
         description: editForm.description,
@@ -99,7 +97,8 @@ export default function BusinessPage() {
         amenities
       });
 
-      alert("✅ Gimnasio actualizado correctamente");
+      // --- TOAST ÉXITO ---
+      toast.success("✅ Gimnasio actualizado correctamente");
       setEditModalOpen(false);
       
       // Actualizar la lista visualmente (Optimistic UI)
@@ -112,43 +111,58 @@ export default function BusinessPage() {
 
     } catch (error) {
       console.error(error);
-      alert("Error al actualizar el gimnasio");
+      // --- TOAST ERROR ---
+      toast.error("Error al actualizar el gimnasio");
     } finally {
       setSavingEdit(false);
     }
   };
 
-  // C) Eliminar Gimnasio (Delete)
+  // C) Eliminar Gimnasio (Delete) - CON TOAST
   const handleDelete = async (id: string) => {
-    const confirm = window.confirm("⚠️ ¿Estás seguro de eliminar este gimnasio?\n\nEsta acción no se puede deshacer y borrará el espacio de la plataforma.");
+    // Confirmación nativa (útil para detener la ejecución)
+    const confirm = window.confirm("⚠️ ¿Estás seguro de eliminar este gimnasio?\n\nEsta acción no se puede deshacer.");
     if (!confirm) return;
 
     try {
       await gymsService.deleteGym(id);
-      alert("🗑️ Gimnasio eliminado");
       
-      // Quitar de la lista visualmente
+      // --- TOAST ÉXITO ---
+      toast.success("🗑️ Gimnasio eliminado");
+      
       setMyGyms(prev => prev.filter(g => g.id !== id));
     } catch (error) {
       console.error(error);
-      alert("Error al eliminar. Es posible que tenga reservas activas asociadas.");
+      // --- TOAST ERROR ---
+      toast.error("No se pudo eliminar. Puede tener reservas activas.");
     }
   };
-  // --------------------------------
 
-  // Reportes y QR (SCRUM-9)
+  // Reportes y QR
   const totalEarnings = bookings
     .filter(b => b.status === 'completed' || b.status === 'confirmed')
     .reduce((sum, b) => sum + (Number(b.total) || 0), 0);
 
+  // D) Validar QR - CON TOAST
   const handleCheckIn = async (bookingId: string) => {
     if (!bookingId) return;
+    
+    // Toast de carga opcional (da buen feedback)
+    const loadingToast = toast.loading("Validando...");
+
     const { error } = await supabase.from('bookings').update({ status: 'completed' }).eq('id', bookingId);
+    
+    toast.dismiss(loadingToast); // Quitar carga
+
     if (!error) {
-      alert("✅ Asistencia Validada");
+      // --- TOAST ÉXITO ---
+      toast.success("✅ Asistencia Validada Correctamente");
       setBookings(prev => prev.map(b => b.id === bookingId ? {...b, status: 'completed'} : b));
       setQrInput("");
-    } else alert("❌ ID no encontrado");
+    } else {
+      // --- TOAST ERROR ---
+      toast.error("❌ ID no encontrado o error de conexión");
+    }
   };
 
   const logout = async () => {
@@ -162,7 +176,7 @@ export default function BusinessPage() {
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
       <nav className="bg-gray-900 text-white px-6 py-4 shadow-md flex justify-between">
         <span className="font-bold">SpaceGym Business</span>
-        <button onClick={logout}>Cerrar Sesión</button>
+        <button onClick={logout} className="hover:text-gray-300">Cerrar Sesión</button>
       </nav>
 
       <main className="max-w-7xl mx-auto p-6">
@@ -171,7 +185,7 @@ export default function BusinessPage() {
           <Link href="/dashboard/publish" className="bg-[#78BE20] text-white px-6 py-2 rounded-xl font-bold hover:bg-green-600 transition-all">+ Publicar</Link>
         </div>
 
-        {/* Dashboard de Métricas */}
+        {/* Métricas */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
           <div className="bg-white p-6 rounded-2xl shadow-sm border">
             <p className="text-xs font-bold text-gray-500">INGRESOS TOTALES</p>
@@ -184,13 +198,18 @@ export default function BusinessPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Columna Izquierda: Reservas */}
+          {/* Columna Izquierda: Validar QR y Reservas */}
           <div className="lg:col-span-2 space-y-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border">
               <h2 className="font-bold mb-4">📸 Validar QR</h2>
               <div className="flex gap-2">
-                <input value={qrInput} onChange={e => setQrInput(e.target.value)} placeholder="ID Reserva..." className="flex-grow p-2 border rounded-lg" />
-                <button onClick={() => handleCheckIn(qrInput)} className="bg-black text-white px-4 rounded-lg">Validar</button>
+                <input 
+                    value={qrInput} 
+                    onChange={e => setQrInput(e.target.value)} 
+                    placeholder="Escribe ID Reserva..." 
+                    className="grow p-2 border rounded-lg"
+                />
+                <button onClick={() => handleCheckIn(qrInput)} className="bg-black text-white px-4 rounded-lg hover:bg-gray-800">Validar</button>
               </div>
             </div>
             
@@ -198,7 +217,7 @@ export default function BusinessPage() {
               <div className="p-4 border-b bg-gray-50 font-bold text-sm text-gray-500">Últimas Reservas</div>
               {bookings.length === 0 && <div className="p-6 text-center text-gray-400">Sin movimientos recientes.</div>}
               {bookings.map(b => (
-                <div key={b.id} className="p-4 border-b flex justify-between items-center hover:bg-gray-50">
+                <div key={b.id} className="p-4 border-b flex justify-between items-center hover:bg-gray-50 transition-colors">
                   <div>
                     <p className="font-bold">{b.profiles?.full_name || 'Cliente'}</p>
                     <p className="text-xs text-gray-500">{b.sport_spaces?.name} • {b.fecha}</p>
@@ -212,7 +231,7 @@ export default function BusinessPage() {
             </div>
           </div>
 
-          {/* Columna Derecha: Mis Espacios (Con Botones) */}
+          {/* Columna Derecha: Mis Espacios */}
           <div className="space-y-4">
             <h2 className="font-bold text-xl">Mis Espacios</h2>
             {myGyms.map(gym => (
@@ -225,7 +244,6 @@ export default function BusinessPage() {
                   <p className="text-green-600 font-bold">${Number(gym.price_per_day).toLocaleString()}</p>
                 </div>
                 
-                {/* BOTONES DE ACCIÓN */}
                 <div className="mt-4 pt-3 border-t flex gap-2">
                   <button 
                     onClick={() => handleOpenEdit(gym)}

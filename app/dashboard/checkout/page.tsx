@@ -13,7 +13,7 @@ function CheckoutContent() {
   const router = useRouter();
   const { user } = useAuth();
 
-  // 1. Recuperar datos con valores seguros (Default)
+  // 1. Recuperar datos con valores seguros
   const gymId = searchParams.get('gymId');
   const fecha = searchParams.get('fecha');
   const hora = searchParams.get('hora') || '09:00';     
@@ -38,18 +38,27 @@ function CheckoutContent() {
     }
   }, [gymId]);
 
-  // 3. LÓGICA DE PAGO Y NOTIFICACIÓN
+  // 3. LÓGICA DE PAGO SEGURA (DOBLE CANDADO)
   const handlePayment = async () => {
-    if (!user || !gym) return;
+    // Validaciones básicas antes de empezar
+    if (!user || !gym || !gymId || !fecha) return;
+
     setProcessing(true);
-    
-    const loadingToast = toast.loading("Procesando pago y notificando...");
+    const loadingToast = toast.loading("Verificando disponibilidad en tiempo real...");
 
     try {
+        // --- CANDADO 1: VERIFICACIÓN PREVIA ---
+        // Antes de cobrar o simular nada, preguntamos a la BD si el hueco sigue libre.
+        // Si alguien ganó el lugar hace 1 segundo, esto lanzará un error y saltará al catch.
+        await gymsService.checkAvailability(gymId, fecha, hora, horas);
+        
+        // Si pasa, actualizamos el mensaje
+        toast.loading("Procesando pago y notificando...", { id: loadingToast });
+
         // A) SIMULACIÓN DE PAGO (2 segundos)
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Calcular hora de término
+        // Calcular hora fin
         const [h, m] = hora.split(':').map(Number);
         const endDate = new Date();
         endDate.setHours(h + horas);
@@ -59,7 +68,8 @@ function CheckoutContent() {
         // Calcular Total
         const montoTotal = gym.pricePerDay * dias;
 
-        // B) GUARDAR EN BASE DE DATOS (Columnas Exactas)
+        // B) GUARDAR EN BASE DE DATOS (CANDADO 2: TRIGGER SQL)
+        // Intentamos guardar. Si el Trigger SQL detecta choque, devolverá error.
         const { error } = await supabase
             .from('bookings')
             .insert({
@@ -70,23 +80,23 @@ function CheckoutContent() {
                 // Columnas de Tiempo
                 start_time: hora,
                 end_time: endTime,
-                hora: hora,       // Legacy
-                horas: horas,     // Numeric (Not Null)
+                hora: hora,       // Legacy support
+                horas: horas,     // Numeric
                 
                 // Columnas de Precio/Cantidad
-                dias: dias,       // Numeric (Not Null)
-                total: montoTotal, // Numeric (Not Null) - Nombre correcto en tu BD
+                dias: dias,       
+                total: montoTotal, // Numeric
                 
                 status: 'confirmed'
             });
 
         if (error) {
             console.error("Error BD:", error);
-            throw new Error(`Error guardando reserva: ${error.message}`);
+            // Si el error viene del Trigger SQL, será "⛔ Este horario ya está ocupado..."
+            throw new Error(error.message);
         }
 
         // C) ENVIAR CORREOS (Llamada al Backend) 📧
-        // Se ejecuta después de guardar en BD para asegurar que la reserva existe
         try {
             await fetch('/api/send-email', {
                 method: 'POST',
@@ -102,13 +112,12 @@ function CheckoutContent() {
                 })
             });
         } catch (emailError) {
-            console.error("Error enviando email (no crítico):", emailError);
-            // No lanzamos error aquí para no asustar al usuario si el pago ya pasó
+            console.error("Error envío email (no bloqueante):", emailError);
         }
 
         // D) ÉXITO FINAL
         toast.dismiss(loadingToast);
-        toast.success("✅ ¡Pago Exitoso y Correos Enviados!", { duration: 4000 });
+        toast.success("✅ ¡Pago Exitoso y Reserva Confirmada!", { duration: 4000 });
         
         setTimeout(() => {
             router.push('/dashboard/reservations');
@@ -117,6 +126,7 @@ function CheckoutContent() {
     } catch (error: any) {
         console.error(error);
         toast.dismiss(loadingToast);
+        // Mostramos el mensaje exacto (ej: "Este horario ya está ocupado")
         toast.error(`${error.message || 'No se pudo procesar'}`);
         setProcessing(false);
     }

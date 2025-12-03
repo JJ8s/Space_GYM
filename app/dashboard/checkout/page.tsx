@@ -13,12 +13,11 @@ function CheckoutContent() {
   const router = useRouter();
   const { user } = useAuth();
 
-  // 1. Recuperar datos de la URL
+  // 1. Recuperar datos con valores seguros (Default)
   const gymId = searchParams.get('gymId');
   const fecha = searchParams.get('fecha');
   const hora = searchParams.get('hora') || '09:00';     
   
-  // Validaciones de seguridad para números
   const horasRaw = Number(searchParams.get('horas'));
   const horas = horasRaw > 0 ? horasRaw : 1; 
   
@@ -39,15 +38,15 @@ function CheckoutContent() {
     }
   }, [gymId]);
 
-  // 3. LÓGICA DE PAGO
+  // 3. LÓGICA DE PAGO Y NOTIFICACIÓN
   const handlePayment = async () => {
     if (!user || !gym) return;
     setProcessing(true);
     
-    const loadingToast = toast.loading("Contactando con el banco...");
+    const loadingToast = toast.loading("Procesando pago y notificando...");
 
     try {
-        // A) SIMULACIÓN DE PAGO
+        // A) SIMULACIÓN DE PAGO (2 segundos)
         await new Promise(resolve => setTimeout(resolve, 2000));
 
         // Calcular hora de término
@@ -57,11 +56,10 @@ function CheckoutContent() {
         endDate.setMinutes(m);
         const endTime = endDate.toTimeString().slice(0, 5); 
 
-        const totalCalculado = gym.pricePerDay * dias;
+        // Calcular Total
+        const montoTotal = gym.pricePerDay * dias;
 
-        // B) GUARDAR EN BASE DE DATOS (SUPER BLINDADO)
-        // Enviamos el dato duplicado con diferentes nombres de columna
-        // para asegurarnos de que coincida con lo que tu base de datos espera.
+        // B) GUARDAR EN BASE DE DATOS (Columnas Exactas)
         const { error } = await supabase
             .from('bookings')
             .insert({
@@ -69,33 +67,52 @@ function CheckoutContent() {
                 user_id: user.id,
                 fecha: fecha,
                 
-                // --- TIEMPO ---
-                start_time: hora, 
+                // Columnas de Tiempo
+                start_time: hora,
                 end_time: endTime,
                 hora: hora,       // Legacy
-                horas: horas,     // Duración
-                dias: dias,       // Días
-
-                // --- DINERO (LA CORRECCIÓN) ---
-                total_price: totalCalculado, // Nombre nuevo
-                total: totalCalculado,       // Nombre antiguo (Este faltaba)
-                // ------------------------------
-
+                horas: horas,     // Numeric (Not Null)
+                
+                // Columnas de Precio/Cantidad
+                dias: dias,       // Numeric (Not Null)
+                total: montoTotal, // Numeric (Not Null) - Nombre correcto en tu BD
+                
                 status: 'confirmed'
             });
 
         if (error) {
-            console.error("Error detallado Supabase:", error);
-            throw new Error(`Error BD: ${error.message}`);
+            console.error("Error BD:", error);
+            throw new Error(`Error guardando reserva: ${error.message}`);
         }
 
-        // C) ÉXITO
+        // C) ENVIAR CORREOS (Llamada al Backend) 📧
+        // Se ejecuta después de guardar en BD para asegurar que la reserva existe
+        try {
+            await fetch('/api/send-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    gymName: gym.name,
+                    gymId: gym.id,
+                    userEmail: user.email, 
+                    userName: user.email?.split('@')[0] || 'Deportista',
+                    date: fecha,
+                    time: hora,
+                    total: montoTotal
+                })
+            });
+        } catch (emailError) {
+            console.error("Error enviando email (no crítico):", emailError);
+            // No lanzamos error aquí para no asustar al usuario si el pago ya pasó
+        }
+
+        // D) ÉXITO FINAL
         toast.dismiss(loadingToast);
-        toast.success("✅ ¡Pago Aprobado!", { duration: 4000 });
+        toast.success("✅ ¡Pago Exitoso y Correos Enviados!", { duration: 4000 });
         
         setTimeout(() => {
             router.push('/dashboard/reservations');
-        }, 1000);
+        }, 1500);
 
     } catch (error: any) {
         console.error(error);
@@ -140,7 +157,7 @@ function CheckoutContent() {
                 <span className="text-gray-500 text-xs font-bold uppercase">Horario</span>
                 <span className="font-bold text-sm">
                     {hora} - {(parseInt(hora.split(':')[0]) + horas).toString().padStart(2,'0')}:{hora.split(':')[1]} 
-                    <span className="text-gray-400 font-normal ml-1">({horas}h)</span>
+                    <span className="text-gray-400 font-normal ml-1"> ({horas}h)</span>
                 </span>
             </div>
 

@@ -1,20 +1,21 @@
-import { Gym } from '@/lib/types/gym';
 import Link from 'next/link';
 import Image from 'next/image';
 
 interface GymCardProps {
-  gym: any; // 'any' para aceptar cualquier formato de datos
+  gym: any; 
 }
 
 export default function GymCard({ gym }: GymCardProps) {
-  
-  // ARREGLO DE FOTOS: Busca imageUrl O image_url
   const imageSrc = gym.imageUrl || gym.image_url;
+  
+  // Lógica de Rating: Si es null o 0, es nuevo.
+  const rating = Number(gym.rating) || 0;
+  const isNew = rating === 0;
 
   return (
     <div className="group relative bg-white border-2 border-black rounded-2xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_#dc2626] flex flex-col h-full">
       
-      {/* ZONA DE IMAGEN */}
+      {/* IMAGEN */}
       <div className="relative h-56 w-full bg-gray-100 border-b-2 border-black">
         {imageSrc ? (
           <Image 
@@ -30,8 +31,9 @@ export default function GymCard({ gym }: GymCardProps) {
           </div>
         )}
 
-        <div className="absolute top-3 right-3 bg-black text-white px-3 py-1 text-xs font-black uppercase -skew-x-12 border-2 border-white shadow-md z-10">
-          ★ {gym.rating || 5.0}
+        {/* --- LÓGICA DE ESTRELLAS VS NUEVO --- */}
+        <div className={`absolute top-3 right-3 px-3 py-1 text-xs font-black uppercase -skew-x-12 border-2 border-white shadow-md z-10 ${isNew ? 'bg-red-600 text-white' : 'bg-black text-white'}`}>
+          {isNew ? "NUEVO" : `★ ${rating}`}
         </div>
         
         {gym.ownerProfile?.is_verified && (
@@ -46,10 +48,10 @@ export default function GymCard({ gym }: GymCardProps) {
         
         <div className="mb-1">
             <h3 className="font-black text-xl text-gray-900 leading-none italic uppercase tracking-tight line-clamp-1">
-                {gym.name}
+                {gym.name || 'Sin Nombre'}
             </h3>
             <p className="text-xs font-bold text-gray-500 uppercase mt-1 flex items-center gap-1">
-                📍 {gym.location}
+                📍 {gym.location || 'Ubicación no disp.'}
             </p>
         </div>
         

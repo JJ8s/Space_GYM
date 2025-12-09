@@ -7,6 +7,7 @@ import Link from 'next/link';
 import QRCode from 'react-qr-code'; 
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
+import RateModal from '@/components/ui/RateModal'; // <--- IMPORTAMOS EL MODAL
 
 export default function MyReservationsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -18,19 +19,25 @@ export default function MyReservationsPage() {
   // Estado para el QR Expandido
   const [expandedQr, setExpandedQr] = useState<string | null>(null);
 
+  // Estados para el Modal de Calificación
+  const [ratingModal, setRatingModal] = useState({ open: false, bookingId: '', gymId: '' });
+
   // Cargar Reservas
   const fetchBookings = async () => {
     if (!user) return;
     try {
+      // Pedimos también si ya tiene review
       const { data, error } = await supabase
         .from('bookings')
         .select(`
             *,
             sport_spaces (
+                id,
                 name,
                 location,
                 image_url
-            )
+            ),
+            reviews (id) 
         `)
         .eq('user_id', user.id)
         .order('fecha', { ascending: false }); 
@@ -83,6 +90,16 @@ export default function MyReservationsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-6 pb-20 font-sans text-gray-900">
+      
+      {/* MODAL DE CALIFICACIÓN */}
+      <RateModal 
+        isOpen={ratingModal.open}
+        bookingId={ratingModal.bookingId}
+        gymId={ratingModal.gymId}
+        onClose={() => setRatingModal({ open: false, bookingId: '', gymId: '' })}
+        onSuccess={() => fetchBookings()} // Recargar para ocultar el botón
+      />
+
       <div className="max-w-3xl mx-auto">
         
         {/* HEADER */}
@@ -161,7 +178,7 @@ export default function MyReservationsPage() {
                                 </div>
                             </div>
 
-                            {/* QR CODE PEQUEÑO (CLIC PARA EXPANDIR) */}
+                            {/* QR CODE PEQUEÑO */}
                             <div 
                                 onClick={() => setExpandedQr(booking.id)} 
                                 className="bg-gray-100 p-6 flex flex-col items-center justify-center border-t-2 md:border-t-0 md:border-l-2 border-black border-dashed relative cursor-zoom-in hover:bg-gray-200 transition-colors group-hover:bg-red-50"
@@ -181,23 +198,44 @@ export default function MyReservationsPage() {
             </div>
         )}
 
-        {/* LISTA HISTORIAL */}
+        {/* LISTA HISTORIAL (Aquí agregamos el botón de Calificar) */}
         {activeTab === 'history' && (
             <div className="space-y-4">
                  {historyBookings.length === 0 ? (
                     <p className="text-center text-gray-400 font-bold uppercase py-10">Historial vacío</p>
                 ) : (
                     historyBookings.map((booking) => (
-                        <div key={booking.id} className="bg-white border-2 border-gray-200 p-4 flex justify-between items-center opacity-60 hover:opacity-100 transition-opacity grayscale hover:grayscale-0">
-                            <div>
-                                <h3 className="font-black text-gray-900 uppercase">{booking.sport_spaces?.name}</h3>
-                                <p className="text-xs font-bold text-gray-500">{booking.fecha}</p>
+                        <div key={booking.id} className={`bg-white border-2 border-gray-200 p-4 flex flex-col sm:flex-row justify-between items-center ${booking.status === 'completed' ? 'border-l-4 border-l-black' : 'opacity-60'}`}>
+                            <div className="mb-2 sm:mb-0">
+                                <h3 className="font-black text-gray-900 uppercase text-lg">{booking.sport_spaces?.name}</h3>
+                                <p className="text-xs font-bold text-gray-500 uppercase">{booking.fecha} • {booking.sport_spaces?.location}</p>
                             </div>
-                            <div>
+                            
+                            <div className="flex items-center gap-3">
                                 {booking.status === 'completed' && (
-                                    <span className="bg-black text-white text-[10px] font-black px-2 py-1 uppercase tracking-wider">
-                                        USADO
-                                    </span>
+                                    <>
+                                        <span className="bg-black text-white text-[10px] font-black px-2 py-1 uppercase tracking-wider">
+                                            COMPLETADO
+                                        </span>
+                                        
+                                        {/* Lógica: Si reviews tiene algo (length > 0), ya votó. Si no, botón votar */}
+                                        {(!booking.reviews || booking.reviews.length === 0) ? (
+                                            <button 
+                                                onClick={() => setRatingModal({ 
+                                                    open: true, 
+                                                    bookingId: booking.id, 
+                                                    gymId: booking.sport_spaces?.id 
+                                                })}
+                                                className="bg-yellow-400 text-black border-2 border-black px-3 py-1 text-[10px] font-black uppercase tracking-wider hover:bg-yellow-300 transition-colors shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[1px] hover:translate-x-[1px] hover:shadow-none"
+                                            >
+                                                ★ Calificar
+                                            </button>
+                                        ) : (
+                                            <span className="text-[10px] font-bold text-yellow-600 uppercase">
+                                                ★ Calificado
+                                            </span>
+                                        )}
+                                    </>
                                 )}
                                 {booking.status === 'cancelled' && (
                                     <span className="bg-red-100 text-red-600 text-[10px] font-black px-2 py-1 uppercase tracking-wider line-through">
@@ -219,7 +257,7 @@ export default function MyReservationsPage() {
             >
                 <div 
                     className="bg-white p-6 rounded-3xl border-4 border-white shadow-[0_0_50px_rgba(255,255,255,0.2)] transform transition-transform scale-100"
-                    onClick={(e) => e.stopPropagation()} // Evita cerrar si clickeas el blanco
+                    onClick={(e) => e.stopPropagation()} 
                 >
                     <QRCode value={expandedQr} size={300} />
                 </div>

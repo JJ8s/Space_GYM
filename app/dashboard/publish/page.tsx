@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase/client';
-import { gymsService } from '@/lib/supabase/gyms-service';
+import { gymsService } from '@/lib/supabase/gyms-service'; // Mantenemos importación aunque usaremos supabase directo para asegurar IDs
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import Image from 'next/image';
@@ -37,11 +37,9 @@ export default function PublishPage() {
     imagePreview: '',
     extraImageFiles: [] as File[],
     extraImagePreviews: [] as string[],
-    // Inicializamos con un bloque vacío o por defecto
     schedule: [{ open: '09:00', close: '18:00' }] as ScheduleBlock[]
   });
 
-  // ... (useEffect de protección igual) ...
   useEffect(() => {
     const checkRequirements = async () => {
       if (authLoading) return;
@@ -60,7 +58,6 @@ export default function PublishPage() {
     checkRequirements();
   }, [user, authLoading, router]);
 
-  // ... (Lógica de fotos igual que antes) ...
   const processMainFile = (file: File) => {
     if (!file || !file.type.startsWith('image/')) return toast.error("Solo imágenes válidas");
     const objectUrl = URL.createObjectURL(file);
@@ -96,7 +93,6 @@ export default function PublishPage() {
     } catch (error) { console.error(error); return null; }
   };
 
-  // ... (Lógica de extras igual) ...
   const toggleAmenity = (amenity: string) => {
     setFormData(prev => {
       const exists = prev.amenities.includes(amenity);
@@ -112,7 +108,6 @@ export default function PublishPage() {
     }
   };
 
-  // --- LÓGICA DE HORARIOS MULTI-BLOQUE ---
   const addScheduleBlock = () => {
     setFormData(prev => ({
         ...prev,
@@ -137,7 +132,7 @@ export default function PublishPage() {
     setFormData(prev => ({ ...prev, schedule: newSchedule }));
   };
 
-  // --- ENVÍO ---
+  // --- ENVÍO (CORREGIDO: Insertamos los bloques manualmente) ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -169,23 +164,46 @@ export default function PublishPage() {
             }
         }
         
-        await gymsService.createGym({
-            name: formData.name,
-            description: formData.description,
-            location: formData.location,
-            pricePerDay: Number(formData.pricePerDay),
-            amenities: formData.amenities,
-            image_url: finalImageUrl,
-            extraImagesUrls: finalExtraImageUrls,
-            schedule: formData.schedule // Array de horarios
-        }, user!.id);
+        // 1. Crear el GIMNASIO y obtener su ID
+        const { data: gymData, error: gymError } = await supabase
+            .from('sport_spaces')
+            .insert({
+                owner_id: user!.id,
+                name: formData.name,
+                description: formData.description,
+                location: formData.location,
+                price_per_day: Number(formData.pricePerDay),
+                amenities: formData.amenities,
+                image_url: finalImageUrl,
+                extra_images_urls: finalExtraImageUrls,
+                rating: 0 // Inicia como nuevo
+            })
+            .select()
+            .single();
+
+        if (gymError) throw gymError;
+
+        // 2. Crear los BLOQUES DE HORARIO vinculados al gym
+        // Transformamos los bloques del UI a formato BD
+        const blocksToInsert = formData.schedule.map(block => ({
+            gym_id: gymData.id,
+            start_time: block.open,
+            end_time: block.close,
+            price: Number(formData.pricePerDay) // Precio por defecto del bloque
+        }));
+
+        const { error: blocksError } = await supabase
+            .from('gym_blocks')
+            .insert(blocksToInsert);
+
+        if (blocksError) throw blocksError;
         
         toast.success("¡Publicado exitosamente!", { id: toastId });
         setTimeout(() => router.push('/business'), 1500);
 
     } catch (e: any) { 
         console.error(e);
-        toast.error("Error al publicar");
+        toast.error("Error al publicar: " + e.message);
     } finally {
         setLoading(false);
         setUploading(false);
@@ -242,7 +260,7 @@ export default function PublishPage() {
                 <div><label className="text-xs font-bold text-gray-500 uppercase ml-1">Descripción</label><textarea value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} rows={4} className="w-full p-3 border-2 border-gray-200 focus:border-black outline-none font-medium resize-none" /></div>
             </div>
 
-            {/* --- SECCIÓN HORARIOS ACTUALIZADA (NUEVOS TÍTULOS) --- */}
+            {/* SECCIÓN HORARIOS */}
             <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
                 <label className="text-xs font-bold text-gray-500 uppercase ml-1 block mb-3">Horas Disponibilidad</label>
                 
@@ -269,7 +287,6 @@ export default function PublishPage() {
                                 />
                             </div>
                             
-                            {/* Botón Borrar */}
                             {formData.schedule.length > 1 && (
                                 <button type="button" onClick={() => removeScheduleBlock(index)} className="mt-4 p-2 text-red-500 hover:bg-red-50 rounded-lg" title="Eliminar bloque">🗑️</button>
                             )}
@@ -301,7 +318,7 @@ export default function PublishPage() {
             </button>
         </div>
 
-        {/* VISTA PREVIA */}
+        {/* VISTA PREVIA (NO CAMBIA) */}
         <div className="hidden lg:block relative">
             <div className="sticky top-28 space-y-4">
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest text-center">Así lo verán los clientes</h3>

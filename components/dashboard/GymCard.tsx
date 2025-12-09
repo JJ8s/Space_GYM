@@ -3,18 +3,22 @@ import Link from 'next/link';
 import Image from 'next/image';
 
 interface GymCardProps {
-  gym: Gym;
+  gym: any; // 'any' para aceptar cualquier formato de datos
 }
 
 export default function GymCard({ gym }: GymCardProps) {
+  
+  // ARREGLO DE FOTOS: Busca imageUrl O image_url
+  const imageSrc = gym.imageUrl || gym.image_url;
+
   return (
     <div className="group relative bg-white border-2 border-black rounded-2xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[8px_8px_0px_0px_#dc2626] flex flex-col h-full">
       
-      {/* --- ZONA DE IMAGEN --- */}
+      {/* ZONA DE IMAGEN */}
       <div className="relative h-56 w-full bg-gray-100 border-b-2 border-black">
-        {gym.imageUrl ? (
+        {imageSrc ? (
           <Image 
-            src={gym.imageUrl} 
+            src={imageSrc} 
             alt={gym.name}
             fill
             className="object-cover transition-transform duration-500 group-hover:scale-105"
@@ -26,12 +30,10 @@ export default function GymCard({ gym }: GymCardProps) {
           </div>
         )}
 
-        {/* Rating Flotante */}
         <div className="absolute top-3 right-3 bg-black text-white px-3 py-1 text-xs font-black uppercase -skew-x-12 border-2 border-white shadow-md z-10">
           ★ {gym.rating || 5.0}
         </div>
         
-        {/* Badge de Verificado */}
         {gym.ownerProfile?.is_verified && (
             <div className="absolute bottom-3 left-3 bg-white text-black px-2 py-1 text-[10px] font-black uppercase border-2 border-black shadow-sm z-10">
                 ✅ Verificado
@@ -39,7 +41,7 @@ export default function GymCard({ gym }: GymCardProps) {
         )}
       </div>
       
-      {/* --- CONTENIDO --- */}
+      {/* CONTENIDO */}
       <div className="p-5 flex flex-col flex-grow">
         
         <div className="mb-1">
@@ -51,26 +53,25 @@ export default function GymCard({ gym }: GymCardProps) {
             </p>
         </div>
         
-        {/* Amenities (Chips) */}
+        {/* Amenities */}
         <div className="flex flex-wrap gap-1 my-4 h-6 overflow-hidden">
-           {gym.amenities.slice(0, 3).map((a, i) => (
+           {(gym.amenities || []).slice(0, 3).map((a: string, i: number) => (
               <span key={i} className="text-[10px] bg-gray-100 border border-gray-200 text-gray-600 px-2 py-0.5 rounded font-bold uppercase">
                 {a.split(' ')[0]}
               </span>
            ))}
-           {gym.amenities.length > 3 && <span className="text-[10px] text-gray-400 font-bold">+{gym.amenities.length - 3}</span>}
+           {(gym.amenities || []).length > 3 && <span className="text-[10px] text-gray-400 font-bold">+{gym.amenities.length - 3}</span>}
         </div>
 
-        {/* --- PIE DE TARJETA (PRECIO Y BOTÓN) --- */}
+        {/* PIE */}
         <div className="mt-auto pt-4 border-t-2 border-gray-100 flex items-center justify-between gap-3">
           <div>
              <p className="text-[10px] text-gray-400 font-bold uppercase mb-0.5">Precio día</p>
              <p className="text-xl font-black text-red-600 tracking-tighter">
-                ${gym.pricePerDay.toLocaleString()}
+                ${Number(gym.pricePerDay || gym.price_per_day).toLocaleString()}
              </p>
           </div>
           
-          {/* EL BOTÓN QUE FALTABA 👇 */}
           <Link 
             href={`/dashboard/gym/${gym.id}`}
             className="flex-1 bg-black text-white py-3 rounded-lg font-black text-xs uppercase tracking-wider text-center hover:bg-red-600 hover:shadow-lg transition-all duration-200 active:scale-95"

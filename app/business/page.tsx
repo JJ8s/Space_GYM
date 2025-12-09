@@ -76,6 +76,36 @@ export default function BusinessPage() {
     if (user) loadData();
   }, [user]);
 
+  // --- NUEVA FUNCIÓN: CANCELAR RESERVA ---
+  const handleCancelBooking = async (bookingId: string) => {
+    // 1. Confirmación de seguridad
+    const confirm = window.confirm("⚠️ ¿Estás seguro de cancelar esta reserva? Esta acción no se puede deshacer.");
+    if (!confirm) return;
+
+    const toastId = toast.loading("Cancelando reserva...");
+
+    try {
+        // 2. Actualizar en Supabase
+        const { error } = await supabase
+            .from('bookings')
+            .update({ status: 'cancelled' })
+            .eq('id', bookingId);
+
+        if (error) throw error;
+
+        // 3. Actualizar estado local (para que se refleje sin recargar)
+        setBookings(prev => prev.map(b => 
+            b.id === bookingId ? { ...b, status: 'cancelled' } : b
+        ));
+
+        toast.success("Reserva cancelada exitosamente", { id: toastId });
+
+    } catch (error) {
+        console.error(error);
+        toast.error("Error al cancelar la reserva", { id: toastId });
+    }
+  };
+
   // --- CRUD GIMNASIOS ---
   const handleOpenEdit = (gym: any) => {
     setEditingGym(gym);
@@ -181,7 +211,7 @@ export default function BusinessPage() {
         return sum + amount;
     }, 0);
 
-  // --- LÓGICA DE VALIDACIÓN ROBUSTA (AQUÍ ESTÁ LA MAGIA) ---
+  // --- LÓGICA DE VALIDACIÓN ROBUSTA ---
   const handleCheckIn = async (bookingId: string) => {
     if (!bookingId) return;
     
@@ -223,6 +253,11 @@ export default function BusinessPage() {
         // ¿Ya se usó?
         if (bookingRemote.status === 'completed') {
             toast("✋ Este ticket ya fue usado anteriormente.", { icon: '⚠️', id: loadingToast });
+            return;
+        }
+
+        if (bookingRemote.status === 'cancelled') {
+            toast.error("❌ Ticket cancelado previamente.", { id: loadingToast });
             return;
         }
 
@@ -358,7 +393,7 @@ export default function BusinessPage() {
               </div>
             </div>
             
-            {/* Lista Reservas */}
+            {/* Lista Reservas (CON BOTÓN DE CANCELAR NUEVO) */}
             <div className="border-2 border-gray-200 bg-white">
               <div className="p-4 border-b-2 border-gray-100 bg-gray-50 font-black text-xs text-gray-400 uppercase tracking-widest">Últimas Reservas</div>
               {bookings.length === 0 && <div className="p-8 text-center text-gray-400 italic">No hay movimientos recientes.</div>}
@@ -377,9 +412,28 @@ export default function BusinessPage() {
                     </div>
                     <p className="text-[10px] font-mono text-gray-300 mt-1 group-hover:text-gray-500">ID: {b.id}</p>
                   </div>
-                  <span className={`px-3 py-1 text-xs font-black uppercase tracking-wider border-2 ${b.status === 'completed' ? 'bg-black text-white border-black' : 'bg-red-50 border-red-200 text-red-600'}`}>
-                    {b.status === 'completed' ? 'VALIDADO' : 'PENDIENTE'}
-                  </span>
+                  
+                  {/* AQUÍ ESTÁ EL CAMBIO: Botón Cancelar junto al Badge */}
+                  <div className="flex items-center gap-3">
+                      {/* Solo mostramos botón si NO está cancelada ni completada */}
+                      {(b.status !== 'cancelled' && b.status !== 'completed') && (
+                          <button 
+                            onClick={() => handleCancelBooking(b.id)}
+                            className="text-[10px] font-bold text-gray-400 hover:text-red-600 border-b border-transparent hover:border-red-600 transition-all uppercase"
+                          >
+                            Cancelar
+                          </button>
+                      )}
+
+                      <span className={`px-3 py-1 text-xs font-black uppercase tracking-wider border-2 ${
+                        b.status === 'completed' ? 'bg-black text-white border-black' : 
+                        b.status === 'cancelled' ? 'bg-gray-100 text-gray-500 border-gray-200 line-through' :
+                        'bg-red-50 border-red-200 text-red-600'
+                      }`}>
+                        {b.status === 'completed' ? 'VALIDADO' : 
+                         b.status === 'cancelled' ? 'CANCELADO' : 'PENDIENTE'}
+                      </span>
+                  </div>
                 </div>
               ))}
             </div>

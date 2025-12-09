@@ -1,101 +1,239 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { supabase } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import QRCode from "react-qr-code"; // IMPORTANTE
-import Modal from '@/components/ui/Modal'; // Reutilizamos tu modal
+import { supabase } from '@/lib/supabase/client';
+import Link from 'next/link';
+import QRCode from 'react-qr-code'; 
+import toast from 'react-hot-toast';
+import { useRouter } from 'next/navigation';
 
 export default function MyReservationsPage() {
   const { user, loading: authLoading } = useAuth();
-  const [reservations, setReservations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Estado para el QR
-  const [selectedQr, setSelectedQr] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
+  const [bookings, setBookings] = useState<any[]>([]);
+  const router = useRouter();
 
-  useEffect(() => {
-    const fetchReservations = async () => {
-      if (!user) return;
+  // Estado para el QR Expandido
+  const [expandedQr, setExpandedQr] = useState<string | null>(null);
+
+  // Cargar Reservas
+  const fetchBookings = async () => {
+    if (!user) return;
+    try {
       const { data, error } = await supabase
         .from('bookings')
-        .select(`*, sport_spaces (name, location, image_url)`)
+        .select(`
+            *,
+            sport_spaces (
+                name,
+                location,
+                image_url
+            )
+        `)
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('fecha', { ascending: false }); 
 
-      if (!error) setReservations(data || []);
+      if (error) throw error;
+      setBookings(data || []);
+    } catch (error) {
+      console.error(error);
+      toast.error("Error al cargar tus tickets");
+    } finally {
       setLoading(false);
-    };
+    }
+  };
 
-    if (!authLoading) fetchReservations();
-  }, [user, authLoading]);
+  useEffect(() => {
+    if (!authLoading && !user) {
+        router.push('/auth');
+    }
+    if (user) fetchBookings();
+  }, [user, authLoading, router]);
 
-  if (loading) return <div className="p-10 text-center">Cargando...</div>;
+  // --- LÓGICA DE CANCELACIÓN ---
+  const handleCancelBooking = async (bookingId: string) => {
+    const confirm = window.confirm("⚠️ ¿Estás seguro de cancelar? Se eliminará tu reserva y perderás el cupo.");
+    if (!confirm) return;
+
+    const toastId = toast.loading("Eliminando reserva...");
+
+    try {
+        const { error } = await supabase
+            .from('bookings')
+            .delete()
+            .eq('id', bookingId);
+
+        if (error) throw error;
+
+        setBookings(prev => prev.filter(b => b.id !== bookingId));
+        toast.success("Reserva cancelada y eliminada", { id: toastId });
+
+    } catch (error) {
+        console.error(error);
+        toast.error("No se pudo cancelar la reserva", { id: toastId });
+    }
+  };
+
+  const activeBookings = bookings.filter(b => b.status === 'confirmed');
+  const historyBookings = bookings.filter(b => b.status === 'completed' || b.status === 'cancelled');
+
+  if (authLoading || loading) return <div className="min-h-screen flex items-center justify-center font-black italic">CARGANDO TICKETS...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Mis Reservas</h1>
-          <Link href="/dashboard" className="text-green-600 hover:underline">← Volver</Link>
-        </div>
-
-        <div className="grid gap-4">
-          {reservations.map((res) => (
-            <div key={res.id} className="bg-white rounded-xl p-6 shadow-sm border flex flex-col md:flex-row gap-6 items-center">
-              {/* ... (Imagen del gimnasio igual que antes) ... */}
-              <div className="w-24 h-24 bg-gray-200 rounded-lg overflow-hidden">
-                 {res.sport_spaces?.image_url ? <img src={res.sport_spaces.image_url} className="w-full h-full object-cover"/> : null}
-              </div>
-
-              <div className="flex-grow">
-                <h3 className="font-bold text-xl">{res.sport_spaces?.name}</h3>
-                <p className="text-sm text-gray-500">Fecha: {res.fecha} - Hora: {res.hora}</p>
-                <span className={`text-xs px-2 py-1 rounded-full font-bold uppercase ${
-                  res.status === 'completed' ? 'bg-blue-100 text-blue-700' : 
-                  res.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-gray-100'
-                }`}>
-                  {res.status === 'completed' ? 'Asistencia Validada' : res.status}
-                </span>
-              </div>
-
-              {/* BOTÓN QR: Solo si está confirmada */}
-              {res.status === 'confirmed' && (
-                <button 
-                  onClick={() => setSelectedQr(res.id)}
-                  className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-800 flex items-center gap-2"
-                >
-                  📲 Ver QR Acceso
-                </button>
-              )}
+    <div className="min-h-screen bg-gray-50 p-6 pb-20 font-sans text-gray-900">
+      <div className="max-w-3xl mx-auto">
+        
+        {/* HEADER */}
+        <div className="mb-8 border-b-4 border-black pb-4 flex justify-between items-end">
+            <div>
+                <h1 className="text-4xl font-black italic uppercase tracking-tighter">Mis <span className="text-red-600">Tickets</span></h1>
+                <p className="text-gray-500 font-bold uppercase text-xs tracking-widest mt-1">Gestiona tus entradas</p>
             </div>
-          ))}
+            <Link href="/dashboard" className="text-xs font-bold uppercase border-b-2 border-transparent hover:border-black transition-all">
+                ← Volver a buscar
+            </Link>
         </div>
-      </div>
 
-      {/* MODAL DEL QR */}
-      <Modal 
-        open={!!selectedQr} 
-        onClose={() => setSelectedQr(null)} 
-        title="Tu Pase de Acceso"
-      >
-        <div className="flex flex-col items-center justify-center p-4 text-center">
-          <div className="bg-white p-4 rounded-xl shadow-inner border border-gray-200 mb-4">
-            {selectedQr && (
-              <QRCode 
-                value={selectedQr} // El valor del QR es el ID de la reserva
-                size={200}
-                level="H"
-              />
-            )}
-          </div>
-          <p className="text-sm text-gray-600 font-medium">
-            Muestra este código al llegar al recinto.
-          </p>
-          <p className="text-xs text-gray-400 mt-2">ID: {selectedQr}</p>
+        {/* PESTAÑAS */}
+        <div className="flex gap-4 mb-8">
+            <button 
+                onClick={() => setActiveTab('active')}
+                className={`flex-1 py-3 font-black uppercase text-sm tracking-wider border-2 transition-all shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none
+                ${activeTab === 'active' ? 'bg-black text-white border-black' : 'bg-white text-gray-400 border-gray-200 hover:border-black hover:text-black'}`}
+            >
+                Activos ({activeBookings.length})
+            </button>
+            <button 
+                onClick={() => setActiveTab('history')}
+                className={`flex-1 py-3 font-black uppercase text-sm tracking-wider border-2 transition-all shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[2px] hover:translate-x-[2px] hover:shadow-none
+                ${activeTab === 'history' ? 'bg-black text-white border-black' : 'bg-white text-gray-400 border-gray-200 hover:border-black hover:text-black'}`}
+            >
+                Historial ({historyBookings.length})
+            </button>
         </div>
-      </Modal>
+
+        {/* LISTA DE ACTIVOS */}
+        {activeTab === 'active' && (
+            <div className="space-y-6">
+                {activeBookings.length === 0 ? (
+                    <div className="text-center py-16 border-2 border-dashed border-gray-300 bg-gray-100 rounded-lg">
+                        <p className="text-gray-400 font-black uppercase text-xl">Sin reservas activas</p>
+                        <Link href="/dashboard" className="mt-4 inline-block bg-red-600 text-white px-6 py-3 font-bold uppercase text-xs tracking-wider hover:bg-black transition-colors">
+                            Reservar Ahora
+                        </Link>
+                    </div>
+                ) : (
+                    activeBookings.map((booking) => (
+                        <div key={booking.id} className="bg-white border-2 border-black flex flex-col md:flex-row overflow-hidden shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 transition-transform group">
+                            
+                            {/* INFO */}
+                            <div className="p-6 flex-1 flex flex-col justify-between relative">
+                                <div>
+                                    <div className="inline-block bg-green-100 border border-green-300 text-green-800 text-[10px] font-black uppercase px-2 py-1 mb-2">
+                                        ● Confirmado
+                                    </div>
+                                    <h3 className="text-2xl font-black italic uppercase leading-none mb-1">{booking.sport_spaces?.name}</h3>
+                                    <p className="text-xs font-bold text-gray-400 uppercase">📍 {booking.sport_spaces?.location}</p>
+                                </div>
+
+                                <div className="mt-6 grid grid-cols-2 gap-4 border-t-2 border-dashed border-gray-200 pt-4">
+                                    <div>
+                                        <p className="text-[10px] text-gray-400 font-bold uppercase">Fecha</p>
+                                        <p className="font-bold text-lg">{booking.fecha}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] text-gray-400 font-bold uppercase">Hora</p>
+                                        <p className="font-bold text-lg">{booking.start_time?.slice(0,5)} Hrs</p>
+                                    </div>
+                                </div>
+
+                                <div className="mt-6 flex justify-between items-center">
+                                    <p className="font-black text-3xl text-red-600">${Number(booking.total || booking.total_price).toLocaleString()}</p>
+                                    
+                                    <button 
+                                        onClick={() => handleCancelBooking(booking.id)}
+                                        className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b-2 border-transparent hover:text-red-600 hover:border-red-600 transition-all"
+                                    >
+                                        Cancelar Reserva
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* QR CODE PEQUEÑO (CLIC PARA EXPANDIR) */}
+                            <div 
+                                onClick={() => setExpandedQr(booking.id)} 
+                                className="bg-gray-100 p-6 flex flex-col items-center justify-center border-t-2 md:border-t-0 md:border-l-2 border-black border-dashed relative cursor-zoom-in hover:bg-gray-200 transition-colors group-hover:bg-red-50"
+                            >
+                                <div className="absolute top-0 bottom-0 -left-[1px] w-[2px] bg-white md:hidden"></div>
+                                
+                                <div className="bg-white p-3 border-2 border-black pointer-events-none">
+                                    <QRCode value={booking.id} size={100} />
+                                </div>
+                                <p className="mt-3 text-[10px] font-black text-gray-400 uppercase tracking-widest text-center group-hover:text-red-600">
+                                    🔍 Click para Zoom
+                                </p>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+        )}
+
+        {/* LISTA HISTORIAL */}
+        {activeTab === 'history' && (
+            <div className="space-y-4">
+                 {historyBookings.length === 0 ? (
+                    <p className="text-center text-gray-400 font-bold uppercase py-10">Historial vacío</p>
+                ) : (
+                    historyBookings.map((booking) => (
+                        <div key={booking.id} className="bg-white border-2 border-gray-200 p-4 flex justify-between items-center opacity-60 hover:opacity-100 transition-opacity grayscale hover:grayscale-0">
+                            <div>
+                                <h3 className="font-black text-gray-900 uppercase">{booking.sport_spaces?.name}</h3>
+                                <p className="text-xs font-bold text-gray-500">{booking.fecha}</p>
+                            </div>
+                            <div>
+                                {booking.status === 'completed' && (
+                                    <span className="bg-black text-white text-[10px] font-black px-2 py-1 uppercase tracking-wider">
+                                        USADO
+                                    </span>
+                                )}
+                                {booking.status === 'cancelled' && (
+                                    <span className="bg-red-100 text-red-600 text-[10px] font-black px-2 py-1 uppercase tracking-wider line-through">
+                                        CANCELADO
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+        )}
+
+        {/* --- MODAL EXPANDIDO DE QR (FULLSCREEN) --- */}
+        {expandedQr && (
+            <div 
+                className="fixed inset-0 z-[999] bg-black/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 animate-in fade-in duration-200 cursor-zoom-out"
+                onClick={() => setExpandedQr(null)}
+            >
+                <div 
+                    className="bg-white p-6 rounded-3xl border-4 border-white shadow-[0_0_50px_rgba(255,255,255,0.2)] transform transition-transform scale-100"
+                    onClick={(e) => e.stopPropagation()} // Evita cerrar si clickeas el blanco
+                >
+                    <QRCode value={expandedQr} size={300} />
+                </div>
+                
+                <p className="text-white font-black uppercase tracking-widest mt-8 animate-pulse">
+                    Muestra este código al recepcionista
+                </p>
+                <p className="text-gray-500 text-xs font-bold uppercase mt-2">
+                    Toca cualquier parte para cerrar
+                </p>
+            </div>
+        )}
+
+      </div>
     </div>
   );
 }
